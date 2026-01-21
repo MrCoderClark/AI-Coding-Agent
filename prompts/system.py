@@ -11,9 +11,9 @@ def get_system_prompt() -> str:
     parts.append(_get_security_section())
 
     # Operational guidelines
-    parts.append(_get_agents_md_section())
+    parts.append(_get_operational_section())
 
-    return "\m\m".join(parts)
+    return "\n\n".join(parts)
 
 
 def _get_identity_section() -> str:

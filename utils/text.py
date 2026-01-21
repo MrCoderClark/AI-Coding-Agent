@@ -20,4 +20,4 @@ def count_tokens(text: str, model: str) -> int:
 
 
 def estimate_tokens(text: str) -> int:
-    return max(1, len(text) // 4)
+    return 0 if not text else max(1, len(text) // 4)

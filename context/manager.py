@@ -15,8 +15,7 @@ class MessageItem:
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {"role": self.role}
 
-        if self.content:
-            result["content"] = self.content
+        result["content"] = self.content
 
         return result
 
@@ -38,12 +37,13 @@ class ContextManager:
         )
         self._messages.append(item)
 
-    def add_assistant_message(self, content: str) -> None:
+    def add_assistant_message(self, content: str | None) -> None:
+        safe_content = content or ""
         item = MessageItem(
             role="assistant",
-            content=content or "",
+            content=safe_content,
             token_count=count_tokens(
-                content,
+                safe_content,
                 self._model_name,
             ),
         )
