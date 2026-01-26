@@ -1,3 +1,4 @@
+from pathlib import Path
 import sys
 from tkinter import EventType
 from typing import Any
@@ -21,6 +22,47 @@ class CLI:
         async with Agent() as agent:
             self.agent = agent
             return await self._process_message(message)
+
+    async def run_interactive(
+        self,
+    ):
+        self.renderer.print_welcome(
+            "AI Agent",
+            lines=[
+                f"model: mistralai/devstral-2512:free",
+                f"cwd: {Path.cwd()}",
+                "commands: /help /config /approval /model /exit",
+            ],
+        )
+        async with Agent() as agent:
+            self.agent = agent
+
+            while True:
+                try:
+                    user_input = console.input("\n[user]>[/user] ")
+                    user_input = user_input.strip()
+                    if not user_input:
+                        continue
+                    if user_input.lower() in {"/exit", "/quit"}:
+                        break
+                    await self._process_message(user_input)
+                except KeyboardInterrupt:
+                    console.print("\n[dim]Use /exit to quit.[/dim]")
+                except EOFError:
+                    break
+
+        console.print("\n[dim]Goodbye![/dim]")
+
+    def _get_tool_kind(self, tool_name) -> str | None:
+        # tool_kind = None
+        tool = self.agent.tool_registry.get(tool_name)
+        # if not tool:
+        # tool_kind = None
+
+        # tool_kind = tool.kind.value
+        tool_kind = tool.kind.value if tool else None
+
+        return tool_kind
 
     async def _process_message(self, message: str) -> str | None:
         if not self.agent:
@@ -46,18 +88,25 @@ class CLI:
                 console.print(f"\n[error]Error: {error}[/error]")
             elif event.type == AgentEventType.TOOL_CALL_START:
                 tool_name = event.data.get("name", "unknown")
-                # tool_kind = None
-                tool = self.agent.tool_registry.get(tool_name)
-                # if not tool:
-                #     tool_kind = None
-
-                # tool_kind = tool.kind.value
-                tool_kind = tool.kind.value if tool else None
+                tool_kind = self._get_tool_kind(tool_name)
                 self.renderer.tool_call_start(
                     event.data.get("call_id", ""),
                     tool_name,
                     tool_kind,
                     event.data.get("arguments", {}),
+                )
+            elif event.type == AgentEventType.TOOL_CALL_COMPLETE:
+                tool_name = event.data.get("name", "unknown")
+                tool_kind = self._get_tool_kind(tool_name)
+                self.renderer.tool_call_complete(
+                    event.data.get("call_id", ""),
+                    tool_name,
+                    tool_kind,
+                    event.data.get("success", False),
+                    event.data.get("output", ""),
+                    event.data.get("error"),
+                    event.data.get("metadata"),
+                    event.data.get("truncated", False),
                 )
 
         return final_response
@@ -72,6 +121,9 @@ def main(prompt: str | None):
         result = asyncio.run(cli.run_single(prompt))
         if result is None:
             sys.exit(1)
+
+    else:
+        asyncio.run(cli.run_interactive())
 
 
 main()
