@@ -1,14 +1,17 @@
+import re
 from pathlib import Path
 from typing import Any
-from rich.console import Console
+from rich.console import Console, Group
 from rich.rule import Rule
 from rich.text import Text
 from rich.theme import Theme
 from rich.panel import Panel
 from rich.table import Table
 from rich import box
+from rich.syntax import Syntax
 
 from utils.paths import display_path_rel_to_cwd
+from utils.text import truncate_text
 
 AGENT_THEME = Theme(
     {
@@ -112,9 +115,9 @@ class RENDERER:
         border_style = f"tool.{tool_kind}" if tool_kind else "tool"
 
         title = Text.assemble(
-            ("🟡 ", "muted"),
+            ("🟡  ", "muted"),
             (name, "tool"),
-            (f"#{call_id[:8]}", "muted"),
+            (f" #{call_id[:8]}", "muted"),
         )
 
         display_args = dict(arguments)
@@ -138,4 +141,164 @@ class RENDERER:
             padding=(1, 2),
         )
 
+        self.console.print()
+        self.console.print(panel)
+
+    def _extract_read_file_code(self, text: str) -> tuple[str, str] | None:
+        body = text
+        header_match = re.match(r"^Showing lines (\d+)-(\d+) of (\d+)\n\n", text)
+        if header_match:
+            body = text[header_match.end() :]
+
+        code_lines: list[str] = []
+        start_line: int | None = None
+
+        for line in body.splitlines():
+            m = re.match(r"^\s*(\d+)\|(.*)$", line)
+            if not m:
+                return None
+            line_no = int(m.group(1))
+            if start_line is None:
+                start_line = line_no
+            code_lines.append(m.group(2))
+        if start_line is None:
+            return None
+
+        return start_line, "\n".join(code_lines)
+
+    def _guess_language(self, path: str | None) -> str:
+        if not path:
+            return "text"
+        suffix = Path(path).suffix.lower()
+        return {
+            ".py": "python",
+            ".js": "javascript",
+            ".jsx": "javascript",
+            ".ts": "typescript",
+            ".json": "json",
+            ".tomol": "toml",
+            ".yaml": "yaml",
+            ".yml": "yaml",
+            ".java": "java",
+            ".kt": "kotlin",
+            ".swift": "swift",
+            ".cpp": "cpp",
+            ".c": "c",
+            ".cpph": "cpp",
+            ".hpp": "cpp",
+            ".cs": "csharp",
+            ".rb": "ruby",
+            ".go": "go",
+            ".rs": "rust",
+            ".html": "html",
+            ".css": "css",
+            ".json": "json",
+            ".xml": "xml",
+            ".sh": "bash",
+            ".bash": "bash",
+            ".zsh": "bash",
+            ".md": "markdown",
+            ".sql": "sql",
+        }.get(suffix, "text")
+
+    def print_welcome(self, title: str, lines: list[str]) -> None:
+        body = "\n".join(lines)
+        self.console.print(
+            Panel(
+                Text(body, style="code"),
+                title=Text(title, style="highlight"),
+                title_align="left",
+                border_style="border",
+                box=box.ROUNDED,
+                padding=(1, 2),
+            )
+        )
+
+    def tool_call_complete(
+        self,
+        call_id: str,
+        name: str,
+        tool_kind: str | None,
+        success: bool,
+        output: str,
+        error: str | None,
+        metadata: dict[str, Any] | None,
+        truncated: bool,
+    ) -> None:
+        border_style = f"tool.{tool_kind}" if tool_kind else "tool"
+        status_icon = "✅  " if success else "❌ "
+        status_style = "success" if success else "error"
+
+        title = Text.assemble(
+            (f"{status_icon}", status_style),
+            (name, "tool"),
+            (f" #{call_id[:8]}", "muted"),
+        )
+
+        primary_path = None
+        blocks = []
+        if isinstance(metadata, dict) and isinstance(metadata.get("path"), str):
+            primary_path = metadata.get("path")
+
+        output_display: str | None = None
+        if name == "read_file" and success and primary_path:
+            extracted = self._extract_read_file_code(output)
+            if extracted:
+                start_line, code = extracted
+
+                shown_start = metadata.get("shown_start")
+                shown_end = metadata.get("shown_end")
+                total_lines = metadata.get("total_lines")
+                pl = self._guess_language(primary_path)
+
+                header_parts = [display_path_rel_to_cwd(primary_path, self.cwd)]
+                header_parts.append(" 🟡  ")
+
+                if shown_start and shown_end and total_lines:
+                    header_parts.append(
+                        f"lines {shown_start}-{shown_end} of {total_lines}"
+                    )
+
+                header = "".join(header_parts)
+                blocks.append(Text(header, style="muted"))
+                blocks.append(
+                    Syntax(
+                        code,
+                        pl,
+                        ltheme="monokai",
+                        line_numbers=True,
+                        start_line=start_line,
+                        word_wrap=False,
+                    )
+                )
+            else:
+                output_display = output
+        else:
+            output_display = error or output
+        if output_display is not None and not blocks:
+            output_display = truncate_text(output_display, "", 240)
+            blocks.append(
+                Syntax(output_display, "text", theme="monokai", word_wrap=False)
+            )
+
+        if truncated:
+            blocks.append(
+                Text(
+                    "note: tool output was truncated",
+                    style="warning",
+                )
+            )
+
+        panel = Panel(
+            Group(*blocks),
+            title=title,
+            title_align="left",
+            subtitle=Text("done" if success else "failed", style=status_style),
+            subtitle_align="right",
+            border_style=border_style,
+            box=box.ROUNDED,
+            padding=(1, 2),
+        )
+
+        self.console.print()
         self.console.print(panel)
