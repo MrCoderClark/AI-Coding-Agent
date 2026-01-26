@@ -240,9 +240,11 @@ class RENDERER:
         if isinstance(metadata, dict) and isinstance(metadata.get("path"), str):
             primary_path = metadata.get("path")
 
-        if name == "read_file" and success:
-            if primary_path:
-                start_line, code = self._extract_read_file_code(output)
+        output_display: str | None = None
+        if name == "read_file" and success and primary_path:
+            extracted = self._extract_read_file_code(output)
+            if extracted:
+                start_line, code = extracted
 
                 shown_start = metadata.get("shown_start")
                 shown_end = metadata.get("shown_end")
@@ -263,22 +265,21 @@ class RENDERER:
                     Syntax(
                         code,
                         pl,
-                        theme="monokai",
+                        ltheme="monokai",
                         line_numbers=True,
                         start_line=start_line,
                         word_wrap=False,
                     )
                 )
             else:
-                output_display = truncate_text(output, "", 240)
-                blocks.append(
-                    Syntax(
-                        output_display,
-                        "text",
-                        theme="monokai",
-                        word_wrap=False,
-                    )
-                )
+                output_display = output
+        else:
+            output_display = error or output
+        if output_display is not None and not blocks:
+            output_display = truncate_text(output_display, "", 240)
+            blocks.append(
+                Syntax(output_display, "text", theme="monokai", word_wrap=False)
+            )
 
         if truncated:
             blocks.append(

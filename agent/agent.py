@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import AsyncGenerator
 
@@ -64,7 +65,14 @@ class Agent:
                     {
                         "id": tc.call_id,
                         "type": "function",
-                        "function": {"name": tc.name, "arguments": str(tc.arguments)},
+                        "function": {
+                            "name": tc.name,
+                            "arguments": (
+                                tc.arguments
+                                if isinstance(tc.arguments, str)
+                                else json.dumps(tc.arguments)
+                            ),
+                        },
                     }
                     for tc in tool_calls
                 ]
