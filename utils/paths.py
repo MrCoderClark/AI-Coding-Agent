@@ -12,12 +12,12 @@ def resolve_path(base: str | Path, path: str | Path):
 def display_path_rel_to_cwd(path: str, cwd: Path) -> str:
     try:
         p = Path(path)
-    except Exception:
+    except (TypeError, ValueError):
         return path
 
     if cwd:
         try:
-            return p.relative_to(cwd)
+            return str(p.relative_to(cwd))
         except ValueError:
             pass
 
