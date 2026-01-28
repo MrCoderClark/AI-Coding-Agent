@@ -94,16 +94,36 @@ class Agent:
             tool_call_results: list[ToolResultMessage] = []
 
             for tool_call in tool_calls:
+                # yield AgentEvent.tool_call_start(
+                #     tool_call.call_id,
+                #     tool_call.name,
+                #     tool_call.arguments,
+                # )
+
+                # result = await self.tool_registry.invoke(
+                #     tool_call.name,
+                #     tool_call.arguments,
+                #     # Path.cwd(),
+                #     self.config.cwd,
+                # )
+                params = tool_call.arguments
+                if isinstance(params, str):
+                    try:
+                        params = json.loads(params) if params else {}
+                    except json.JSONDecodeError:
+                        params = {}
+                if params is None:
+                    params = {}
+
                 yield AgentEvent.tool_call_start(
                     tool_call.call_id,
                     tool_call.name,
-                    tool_call.arguments,
+                    params,
                 )
 
                 result = await self.tool_registry.invoke(
                     tool_call.name,
-                    tool_call.arguments,
-                    # Path.cwd(),
+                    params,
                     self.config.cwd,
                 )
 

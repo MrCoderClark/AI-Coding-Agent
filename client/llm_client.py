@@ -25,7 +25,9 @@ class LLMClient:
     def get_client(self) -> AsyncOpenAI:
         if self._client is None:
             if not self.config.api_key:
-                raise ValueError("API_KEY is not set. Add it to your environment or .env file.")
+                raise ValueError(
+                    "API_KEY is not set. Add it to your environment or .env file."
+                )
             if not self.config.base_url:
                 raise ValueError(
                     "BASE_URL is not set. For OpenRouter set BASE_URL=https://openrouter.ai/api/v1"
@@ -122,7 +124,9 @@ class LLMClient:
                         ),
                     )
                 else:
-                    yield StreamEvent(type=StreamEventType.ERROR, error=f"API error: {e}")
+                    yield StreamEvent(
+                        type=StreamEventType.ERROR, error=f"API error: {e}"
+                    )
                 return
 
     async def _stream_response(
@@ -242,7 +246,8 @@ class LLMClient:
 
         return StreamEvent(
             type=StreamEventType.MESSAGE_COMPLETE,
-            text_delta=TextDelta,
+            # text_delta=TextDelta,
+            text_delta=text_delta,
             finish_reason=choice.finish_reason,
             usage=usage,
         )
