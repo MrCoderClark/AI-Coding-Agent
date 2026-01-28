@@ -10,6 +10,7 @@ from rich.table import Table
 from rich import box
 from rich.syntax import Syntax
 
+from config.config import Config
 from utils.paths import display_path_rel_to_cwd
 from utils.text import truncate_text
 
@@ -52,11 +53,17 @@ def get_console() -> Console:
 
 
 class RENDERER:
-    def __init__(self, console: Console | None = None) -> None:
+    def __init__(
+        self,
+        config: Config,
+        console: Console | None = None,
+    ) -> None:
         self.console = console or get_console()
         self._assistant_stream_open = False
         self._tool_args_by_call_id: dict[str, dict[str, Any]] = {}
-        self.cwd = Path.cwd()
+        # self.cwd = Path.cwd()
+        self.config = config
+        self.cwd = self.config.cwd
 
     def begin_assistant(self) -> None:
         self.console.print()
@@ -265,7 +272,7 @@ class RENDERER:
                     Syntax(
                         code,
                         pl,
-                        ltheme="monokai",
+                        theme="monokai",
                         line_numbers=True,
                         start_line=start_line,
                         word_wrap=False,

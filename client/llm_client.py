@@ -1,4 +1,4 @@
-import asyncio, os
+import asyncio
 from typing import Any, AsyncGenerator
 from openai import APIConnectionError, APIError, AsyncOpenAI, RateLimitError
 from dotenv import load_dotenv
@@ -11,20 +11,30 @@ from client.response import (
     ToolCallDelta,
     parse_tool_call_arguments,
 )
+from config.config import Config
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 class LLMClient:
-    def __init__(self) -> None:
+    def __init__(self, config: Config) -> None:
         self._client: AsyncOpenAI | None = None
         self._max_retries: int = 3
+        self.config = config
 
     def get_client(self) -> AsyncOpenAI:
         if self._client is None:
+            if not self.config.api_key:
+                raise ValueError(
+                    "API_KEY is not set. Add it to your environment or .env file."
+                )
+            if not self.config.base_url:
+                raise ValueError(
+                    "BASE_URL is not set. For OpenRouter set BASE_URL=https://openrouter.ai/api/v1"
+                )
             self._client = AsyncOpenAI(
-                api_key=os.getenv("OPENAI_API_KEY"),
-                base_url=os.getenv("BASE_URL"),
+                api_key=self.config.api_key,
+                base_url=self.config.base_url,
             )
         return self._client
 
@@ -62,7 +72,8 @@ class LLMClient:
         client = self.get_client()
 
         kwargs = {
-            "model": "mistralai/devstral-2512:free",
+            # "model": "mistralai/devstral-2512:free",
+            "model": self.config.model_name,
             "messages": messages,
             "stream": stream,
         }
@@ -101,7 +112,21 @@ class LLMClient:
                     )
                     return
             except APIError as e:
-                yield StreamEvent(type=StreamEventType.ERROR, error=f"API error: {e}")
+                status = getattr(e, "status_code", None)
+                if status == 402:
+                    yield StreamEvent(
+                        type=StreamEventType.ERROR,
+                        error=(
+                            "API error (402): API key spend limit exceeded. "
+                            "Check your OpenRouter dashboard for credits and the API key's USD limit, "
+                            "or change model/provider routing. "
+                            f"Raw error: {e}"
+                        ),
+                    )
+                else:
+                    yield StreamEvent(
+                        type=StreamEventType.ERROR, error=f"API error: {e}"
+                    )
                 return
 
     async def _stream_response(
@@ -221,7 +246,8 @@ class LLMClient:
 
         return StreamEvent(
             type=StreamEventType.MESSAGE_COMPLETE,
-            text_delta=TextDelta,
+            # text_delta=TextDelta,
+            text_delta=text_delta,
             finish_reason=choice.finish_reason,
             usage=usage,
         )
