@@ -5,21 +5,71 @@ from typing import Any
 
 from agent.agent import Agent
 from agent.events import AgentEventType
-from client.llm_client import LLMClient
 import asyncio, click
 
+from config.config import Config
+from config.loader import load_config
 from ui.renderer import RENDERER, get_console
 
 console = get_console()
 
 
 class CLI:
-    def __init__(self):
+    def __init__(self, config: Config):
         self.agent: Agent | None = None
-        self.renderer = RENDERER(console)
+        self.config = config
+        self.renderer = RENDERER(config, console)
+
+    def _mask_key(self, key: str | None) -> str:
+        if not key:
+            return "(not set)"
+        k = key.strip().strip('"').strip("'")
+        if len(k) <= 8:
+            return f"{k[:2]}...{k[-2:]} (len={len(k)})"
+        return f"{k[:4]}...{k[-4:]} (len={len(k)})"
+
+    def _print_config(self) -> None:
+        console.print(f"model: {self.config.model_name}")
+        console.print(f"base_url: {self.config.base_url or '(not set)'}")
+        console.print(f"api_key: {self._mask_key(self.config.api_key)}")
+
+    def _print_help(self) -> None:
+        console.print("/help - show commands")
+        console.print("/config - show active configuration")
+        console.print("/model [model_name] - show or set active model")
+        console.print("/exit - quit")
+
+    def _handle_command(self, message: str) -> bool:
+        msg = message.strip()
+        if not msg.startswith("/"):
+            return False
+
+        parts = msg.split(maxsplit=1)
+        cmd = parts[0].lower()
+        arg = parts[1].strip() if len(parts) > 1 else ""
+
+        if cmd in {"/help"}:
+            self._print_help()
+            return True
+
+        if cmd in {"/config"}:
+            self._print_config()
+            return True
+
+        if cmd in {"/model"}:
+            if not arg:
+                console.print(f"model: {self.config.model_name}")
+                return True
+            self.config.model_name = arg
+            if self.agent is not None:
+                self.agent.context_manager.set_model_name(arg)
+            console.print(f"model set to: {self.config.model_name}")
+            return True
+
+        return False
 
     async def run_single(self, message: str):
-        async with Agent() as agent:
+        async with Agent(self.config) as agent:
             self.agent = agent
             return await self._process_message(message)
 
@@ -29,12 +79,13 @@ class CLI:
         self.renderer.print_welcome(
             "AI Agent",
             lines=[
-                f"model: mistralai/devstral-2512:free",
-                f"cwd: {Path.cwd()}",
+                f"model: {self.config.model_name}",
+                # f"cwd: {Path.cwd()}",
+                f"cwd: {self.config.cwd}",
                 "commands: /help /config /approval /model /exit",
             ],
         )
-        async with Agent() as agent:
+        async with Agent(self.config) as agent:
             self.agent = agent
 
             while True:
@@ -45,6 +96,8 @@ class CLI:
                         continue
                     if user_input.lower() in {"/exit", "/quit"}:
                         break
+                    if self._handle_command(user_input):
+                        continue
                     await self._process_message(user_input)
                 except KeyboardInterrupt:
                     console.print("\n[dim]Use /exit to quit.[/dim]")
@@ -114,8 +167,30 @@ class CLI:
 
 @click.command()
 @click.argument("prompt", required=False)
-def main(prompt: str | None):
-    cli = CLI()
+@click.option(
+    "--cwd",
+    "-c",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Current working directory",
+)
+def main(
+    prompt: str | None,
+    cwd: Path | None,
+):
+
+    try:
+        config = load_config(cwd=cwd)
+    except Exception as e:
+        console.print(f"[error]Configuration Error: {e}[/error]")
+
+    errors = config.validate()
+    if errors:
+        for error in errors:
+            console.print(f"[error]{error}[/error]")
+        sys.exit(1)
+
+    cli = CLI(config)
+
     # messages = [{"role": "user", "content": prompt}]
     if prompt:
         result = asyncio.run(cli.run_single(prompt))
