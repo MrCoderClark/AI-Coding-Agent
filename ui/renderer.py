@@ -64,6 +64,7 @@ class RENDERER:
         # self.cwd = Path.cwd()
         self.config = config
         self.cwd = self.config.cwd
+        self._max_block_tokens = 240
 
     def begin_assistant(self) -> None:
         self.console.print()
@@ -85,6 +86,7 @@ class RENDERER:
     def _ordered_args(self, tool_name: str, args: dict[str, Any]) -> list[tuple]:
         _PREFERRED_ARG_ORDER = {
             "read_file": ["path", "offset", "length"],
+            "write_file": ["path", "create_directories", "content"],
         }
 
         preferred = _PREFERRED_ARG_ORDER.get(tool_name, [])
@@ -107,6 +109,12 @@ class RENDERER:
         table.add_column(overflow="fold", style="code")
 
         for key, value in self._ordered_args(tool_name, args):
+            if isinstance(value, str):
+                if key in {"content", "old_string", "new_string"}:
+                    line_count = len(value.splitlines()) or 0
+                    byte_count = len(value.encode("utf-8", errors="replace"))
+                    value = f"<{line_count} lines • {byte_count} bytes>"
+
             table.add_row(key, value)
 
         return table
@@ -230,6 +238,7 @@ class RENDERER:
         output: str,
         error: str | None,
         metadata: dict[str, Any] | None,
+        diff: str | None,
         truncated: bool,
     ) -> None:
         border_style = f"tool.{tool_kind}" if tool_kind else "tool"
@@ -248,10 +257,9 @@ class RENDERER:
             primary_path = metadata.get("path")
 
         output_display: str | None = None
-        if name == "read_file" and success and primary_path:
-            extracted = self._extract_read_file_code(output)
-            if extracted:
-                start_line, code = extracted
+        if name == "read_file" and success:
+            if primary_path:
+                start_line, code = self._extract_read_file_code(output)
 
                 shown_start = metadata.get("shown_start")
                 shown_end = metadata.get("shown_end")
@@ -259,7 +267,7 @@ class RENDERER:
                 pl = self._guess_language(primary_path)
 
                 header_parts = [display_path_rel_to_cwd(primary_path, self.cwd)]
-                header_parts.append(" 🟡  ")
+                header_parts.append(" • ")
 
                 if shown_start and shown_end and total_lines:
                     header_parts.append(
@@ -279,14 +287,35 @@ class RENDERER:
                     )
                 )
             else:
-                output_display = output
-        else:
-            output_display = error or output
-        if output_display is not None and not blocks:
-            output_display = truncate_text(output_display, "", 240)
-            blocks.append(
-                Syntax(output_display, "text", theme="monokai", word_wrap=False)
+                output_display = truncate_text(
+                    output,
+                    "",
+                    self._max_block_tokens,
+                )
+                blocks.append(
+                    Syntax(
+                        output_display,
+                        "text",
+                        theme="monokai",
+                        word_wrap=False,
+                    )
+                )
+        elif name in "write_file" and success and diff:
+            output_line = output.strip() if output.strip() else "Completed"
+            blocks.append(Text(output_line, style="muted"))
+            diff_text = diff
+            diff_display = truncate_text(
+                diff_text,
+                self.config.model_name,
+                self._max_block_tokens,
             )
+            blocks.append(Syntax(diff_display, "diff", theme="monokai", word_wrap=True))
+
+        # if output_display is not None and not blocks:
+        #     output_display = truncate_text(output_display, "", 240)
+        #     blocks.append(
+        #         Syntax(output_display, "text", theme="monokai", word_wrap=False)
+        #     )
 
         if truncated:
             blocks.append(

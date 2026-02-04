@@ -1,12 +1,10 @@
 from pathlib import Path
 import sys
-from tkinter import EventType
-from typing import Any
 
 from agent.agent import Agent
 from agent.events import AgentEventType
 import asyncio, click
-
+from agent.session import Session
 from config.config import Config
 from config.loader import load_config
 from ui.renderer import RENDERER, get_console
@@ -18,6 +16,7 @@ class CLI:
     def __init__(self, config: Config):
         self.agent: Agent | None = None
         self.config = config
+        self.session: Session | None = Session(self.config)
         self.renderer = RENDERER(config, console)
 
     def _mask_key(self, key: str | None) -> str:
@@ -108,7 +107,7 @@ class CLI:
 
     def _get_tool_kind(self, tool_name) -> str | None:
         # tool_kind = None
-        tool = self.agent.tool_registry.get(tool_name)
+        tool = self.agent.session.tool_registry.get(tool_name)
         # if not tool:
         # tool_kind = None
 
@@ -159,6 +158,7 @@ class CLI:
                     event.data.get("output", ""),
                     event.data.get("error"),
                     event.data.get("metadata"),
+                    event.data.get("diff"),
                     event.data.get("truncated", False),
                 )
 
